@@ -1,0 +1,19 @@
+
+plugins {
+    id 'java'
+}
+
+repositories {
+    mavenCentral()
+    maven { url = "https://repo.runelite.net" }
+}
+
+dependencies {
+    compileOnly 'net.runelite:runelite-client:1.9.8'
+    compileOnly 'net.runelite:runelite-api:1.9.8'
+    compileOnly 'org.projectlombok:lombok:1.18.30'
+    annotationProcessor 'org.projectlombok:lombok:1.18.30'
+}
+
+group = 'com.smithingtracker'
+version = '1.0.0'
