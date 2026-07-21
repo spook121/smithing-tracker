@@ -23,7 +23,7 @@ import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.StatChanged;
 import net.runelite.api.widgets.Widget;
-import net.runelite.api.widgets.WidgetInfo;
+import net.runelite.api.gameval.ComponentID;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
@@ -219,7 +219,7 @@ public class SmithingTrackerPlugin extends Plugin
 	public String getStatus()
 	{
 		if (client.getLocalPlayer() == null) return "Idle";
-		Widget bankWidget = client.getWidget(WidgetInfo.BANK_CONTAINER);
+		Widget bankWidget = client.getWidget(ComponentID.BANK_ITEM_CONTAINER);
 		if (bankWidget!= null &&!bankWidget.isHidden()) return "Banking";
 		if (client.getLocalPlayer().getAnimation() == SMITHING_ANIMATION) return "Smithing";
 		if (wasMovingLastTick) return "Running";
