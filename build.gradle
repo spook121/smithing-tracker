@@ -6,11 +6,12 @@ plugins {
 repositories {
     mavenCentral()
     maven { url = "https://repo.runelite.net" }
+    maven { url = "https://repo1.maven.org/maven2" }
 }
 
 dependencies {
-    compileOnly 'net.runelite:runelite-client:1.9.8'
-    compileOnly 'net.runelite:runelite-api:1.9.8'
+    compileOnly 'net.runelite:runelite-client:1.12.3'
+    compileOnly 'net.runelite:runelite-api:1.12.3'
     compileOnly 'org.projectlombok:lombok:1.18.30'
     annotationProcessor 'org.projectlombok:lombok:1.18.30'
 }
