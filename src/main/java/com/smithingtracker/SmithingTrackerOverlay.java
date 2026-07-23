@@ -54,7 +54,7 @@ public class SmithingTrackerOverlay extends OverlayPanel
         if (bankCount > 0)
         {
             String barName = plugin.getItemManager().getItemComposition(sel).getName();
-            int price = plugin.getItemManager().getItemPrice(sel);
+            int price = plugin.getEffectiveBarPrice(sel);
             int rem = bankCount - usedCount;
             if (rem < 0) rem = 0;
             panelComponent.getChildren().add(LineComponent.builder().left(barName).leftColor(CYAN).right(String.format("%d (%s)", rem, formatGp(rem * price))).rightColor(TEXT_COLOR).build());
