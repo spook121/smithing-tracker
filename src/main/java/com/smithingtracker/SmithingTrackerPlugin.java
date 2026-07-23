@@ -43,7 +43,11 @@ import okhttp3.Request;
 import okhttp3.Response;
 
 @Slf4j
-@PluginDescriptor(name = "Smithing Tracker")
+@PluginDescriptor(
+		name = "Smithing Tracker",
+		description = "Tracks items smithed, profit per hour, bars remaining from bank + inventory, and live status. Uses live GE prices from RuneScape Wiki.",
+		tags = {"smithing", "profit", "tracker", "anvil"}
+)
 public class SmithingTrackerPlugin extends Plugin
 {
 	@Inject private Client client;

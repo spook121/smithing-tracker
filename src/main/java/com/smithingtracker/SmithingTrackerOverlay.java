@@ -47,16 +47,11 @@ public class SmithingTrackerOverlay extends OverlayPanel
             panelComponent.getChildren().add(LineComponent.builder().left("Profit/hr").leftColor(GOLD).right(formatGp(plugin.getProfitPerHour())).rightColor(plugin.getProfitPerHour() >= 0? GREEN : new Color(255, 100, 100)).build());
         }
         int sel = config.barType().getItemId();
-        Map<Integer, Integer> bank = plugin.getBarsInBank();
-        Map<Integer, Integer> used = plugin.getBarsUsed();
-        int bankCount = bank.getOrDefault(sel, 0);
-        int usedCount = used.getOrDefault(sel, 0);
-        if (bankCount > 0)
+        int rem = plugin.getRemainingBars(sel);
+        if (rem > 0)
         {
             String barName = plugin.getItemManager().getItemComposition(sel).getName();
             int price = plugin.getEffectiveBarPrice(sel);
-            int rem = bankCount - usedCount;
-            if (rem < 0) rem = 0;
             panelComponent.getChildren().add(LineComponent.builder().left(barName).leftColor(CYAN).right(String.format("%d (%s)", rem, formatGp(rem * price))).rightColor(TEXT_COLOR).build());
         }
         return super.render(g);
