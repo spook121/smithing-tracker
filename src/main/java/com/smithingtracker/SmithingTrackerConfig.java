@@ -14,7 +14,7 @@ public interface SmithingTrackerConfig extends Config
 	@ConfigItem(keyName="barType", name="Bar Type", description="Select bar type to track", position=0, section=generalSection)
 	default BarType barType() { return BarType.RUNITE; }
 
-	@ConfigItem(keyName="customBarCost", name="Bar Buy Price", description="What you paid per bar for the selected Bar Type. 0 = use live GE price from wiki. Select Bar Type above, set your buy price here for accurate profit/hr.", position=1, section=generalSection)
+	@ConfigItem(keyName="customBarCost", name="Bar Buy Price", description="What you paid per bar. 0 = live GE.", position=1, section=generalSection)
 	default int customBarCost() { return 0; }
 
 	@ConfigItem(keyName="showOverlay", name="Show Overlay", description="Show the main smithing overlay", position=2, section=generalSection)

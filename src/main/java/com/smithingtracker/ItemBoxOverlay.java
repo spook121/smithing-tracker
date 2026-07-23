@@ -90,7 +90,7 @@ public class ItemBoxOverlay extends OverlayPanel
                 Rectangle iconBounds = new Rectangle(xPos, yPos, ICON_SIZE, ICON_SIZE);
                 graphics.drawImage(itemImg, xPos, yPos, ICON_SIZE, ICON_SIZE, null);
                 int totalCount = plugin.getItemCountTotal(itemId);
-                int gePrice = plugin.getLivePrice(itemId);
+                int gePrice = plugin.getItemManager().getItemPrice(itemId);
                 long totalValue = (long) totalCount * gePrice;
                 tooltipMap.put(iconBounds, new ItemTooltipData(plugin.getItemManager().getItemComposition(itemId).getName(), totalCount, gePrice, totalValue, itemId));
                 graphics.setColor(GOLD);
@@ -117,8 +117,7 @@ public class ItemBoxOverlay extends OverlayPanel
                 int barId = plugin.getBarIdForItem(data.name);
                 int barsPerItem = plugin.getBarsPerItem(data.name);
                 int barPrice = plugin.getEffectiveBarPrice(barId);
-                int remainingBars = plugin.getBarsInBank().getOrDefault(barId, 0) - plugin.getBarsUsed().getOrDefault(barId, 0);
-                if (remainingBars < 0) remainingBars = 0;
+                int remainingBars = plugin.getRemainingBars(barId);
                 int canMake = barsPerItem == 0? 0 : remainingBars / barsPerItem;
                 int profitEach = data.price - (barsPerItem * barPrice);
                 long totalProfit = (long) canMake * profitEach;
