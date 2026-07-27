@@ -36,7 +36,7 @@ import net.runelite.client.ui.overlay.OverlayManager;
 @Slf4j
 @PluginDescriptor(
         name = "Smithing Tracker",
-        description = "Tracks how much you can make from your bars. See if you will be +/- profit! (Pickaxes excluded) ",
+        description = "Counts bars in bank + inventory (including noted) and shows how many you can smith, with value & profit",
         tags = {"smithing", "bars", "profit", "tracker"}
 )
 public class SmithingTrackerPlugin extends Plugin
@@ -111,14 +111,21 @@ public class SmithingTrackerPlugin extends Plugin
     private int countWithNoted(ItemContainer container, int barId)
     {
         if (container == null) return 0;
-        int count = container.count(barId);
+        int total = 0;
+        try { total += container.count(barId); } catch (Exception ignored) {}
+        try { total += container.count(barId + 1); } catch (Exception ignored) {}
+        // Extra safety: also try via ItemManager if available, but don't double count +1
         try {
-            int notedId = itemManager.getItemComposition(barId).getNote();
-            if (notedId != -1 && notedId != barId) {
-                count += container.count(notedId);
+            int notedId = -1;
+            try { notedId = itemManager.getItemComposition(barId).getLinkedNoteId(); } catch (Exception ignored) {}
+            if (notedId == -1) {
+                try { notedId = itemManager.getItemComposition(barId).getNote(); } catch (Exception ignored2) {}
             }
-        } catch (Exception ignored) {}
-        return count;
+            if (notedId != -1 && notedId != barId && notedId != barId + 1) {
+                total += container.count(notedId);
+            }
+        } catch (Exception ignored3) {}
+        return total;
     }
 
 

@@ -117,7 +117,7 @@ public class ItemBoxOverlay extends OverlayPanel
                 int barId = plugin.getBarIdForItem(data.name);
                 int barsPerItem = plugin.getBarsPerItem(data.name);
                 int barPrice = plugin.getItemManager().getItemPrice(barId);
-                int remainingBars = plugin.getTotalBarsAvailable(barId) - plugin.getBarsUsed().getOrDefault(barId, 0);
+                int remainingBars = plugin.getTotalBarsAvailable(barId);
                 if (remainingBars < 0) remainingBars = 0;
                 int canMake = barsPerItem == 0? 0 : remainingBars / barsPerItem;
                 int profitEach = data.price - (barsPerItem * barPrice);
