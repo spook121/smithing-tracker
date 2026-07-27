@@ -107,33 +107,14 @@ public class SmithingTrackerPlugin extends Plugin
         private int countWithNoted(ItemContainer container, int barId)
         {
                 if (container == null) return 0;
-                java.util.Set<Integer> seen = new java.util.HashSet<>();
-                int total = 0;
-                try {
-                    total += container.count(barId);
-                    seen.add(barId);
-                } catch (Exception ignored) {}
+                int count = container.count(barId);
                 try {
                     int notedId = itemManager.getItemComposition(barId).getNote();
-                    if (notedId != -1 && !seen.contains(notedId)) {
-                        total += container.count(notedId);
-                        seen.add(notedId);
+                    if (notedId != -1 && notedId != barId) {
+                        count += container.count(notedId);
                     }
                 } catch (Exception ignored) {}
-                try {
-                    int linked = itemManager.getItemComposition(barId).getLinkedNoteId();
-                    if (linked != -1 && !seen.contains(linked)) {
-                        total += container.count(linked);
-                        seen.add(linked);
-                    }
-                } catch (Exception ignored2) {}
-                try {
-                    int plusOne = barId + 1;
-                    if (!seen.contains(plusOne)) {
-                        total += container.count(plusOne);
-                    }
-                } catch (Exception ignored3) {}
-                return total;
+                return count;
         }
 
 
@@ -141,43 +122,18 @@ public class SmithingTrackerPlugin extends Plugin
         
         public int getLivePrice(int itemId)
         {
-                try
-                {
-                        try
-                        {
-                                Object result = itemManager.getClass().getMethod("getItemPriceWithSource", int.class, boolean.class).invoke(itemManager, itemId, false);
-                                if (result instanceof Number) return ((Number) result).intValue();
-                                return (int) result.getClass().getMethod("getPrice").invoke(result);
-                        }
-                        catch (NoSuchMethodException nsme)
-                        {
-                                try
-                                {
-                                        Object result = itemManager.getClass().getMethod("getItemPriceWithSource", int.class).invoke(itemManager, itemId);
-                                        if (result instanceof Number) return ((Number) result).intValue();
-                                        return (int) result.getClass().getMethod("getPrice").invoke(result);
-                                }
-                                catch (Exception inner)
-                                {
-                                        return itemManager.getItemPrice(itemId);
-                                }
-                        }
-                }
-                catch (Exception e)
-                {
-                        try { return itemManager.getItemPrice(itemId); } catch (Exception e2) { return 0; }
-                }
+                try { return itemManager.getItemPrice(itemId); } catch (Exception e) { return 0; }
         }
 
         public long getLivePriceLong(int itemId)
         {
-                try { return getLivePrice(itemId); } catch (Exception e) { return 0; }
+                try { return itemManager.getItemPrice(itemId); } catch (Exception e) { return 0; }
         }
 
         public int getEffectiveBarPrice(int barId)
         {
                 if (config.customBarCost() > 0 && barId == config.barType().getItemId()) return config.customBarCost();
-                return getLivePrice(barId);
+                return itemManager.getItemPrice(barId);
         }
 
 
