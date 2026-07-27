@@ -36,7 +36,7 @@ import net.runelite.client.ui.overlay.OverlayManager;
 @Slf4j
 @PluginDescriptor(
         name = "Smithing Tracker",
-        description = "Counts bars in bank + inventory (including noted) and shows how many you can smith, with value & profit",
+        description = "Tracks how much you can make from your bars. See if you will be +/- profit! (Pickaxes excluded) ",
         tags = {"smithing", "bars", "profit", "tracker"}
 )
 public class SmithingTrackerPlugin extends Plugin
