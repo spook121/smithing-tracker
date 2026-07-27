@@ -34,7 +34,11 @@ import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.overlay.OverlayManager;
 
 @Slf4j
-@PluginDescriptor(name = "Smithing Tracker")
+@PluginDescriptor(
+    name = "Smithing Tracker",
+    description = "Tracks how much you can make from your bars. See if you will be +/- profit!(Pickaxes excluded) ",
+    tags = {"smithing", "bars", "profit", "tracker"}
+)
 public class SmithingTrackerPlugin extends Plugin
 {
 	@Inject private Client client;
