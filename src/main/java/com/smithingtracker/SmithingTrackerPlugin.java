@@ -1,8 +1,5 @@
 package com.smithingtracker;
 
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import com.google.inject.Provides;
 import java.time.Duration;
 import java.time.Instant;
@@ -11,9 +8,6 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
@@ -28,8 +22,8 @@ import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.StatChanged;
-import net.runelite.api.widgets.ComponentID;
 import net.runelite.api.widgets.Widget;
+import net.runelite.api.widgets.WidgetInfo;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
@@ -38,16 +32,9 @@ import net.runelite.client.game.ItemManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.overlay.OverlayManager;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.Response;
 
 @Slf4j
-@PluginDescriptor(
-		name = "Smithing Tracker",
-		description = "Tracks items smithed, profit per hour, bars remaining from bank + inventory, and live status. Uses live GE prices from RuneScape Wiki.",
-		tags = {"smithing", "profit", "tracker", "anvil"}
-)
+@PluginDescriptor(name = "Smithing Tracker")
 public class SmithingTrackerPlugin extends Plugin
 {
 	@Inject private Client client;
@@ -57,8 +44,6 @@ public class SmithingTrackerPlugin extends Plugin
 	@Inject private ItemBoxOverlay itemBoxOverlay;
 	@Inject private ItemManager itemManager;
 	@Inject private SmithingTrackerConfig config;
-	@Inject private OkHttpClient okHttpClient;
-	@Inject private ScheduledExecutorService executor;
 
 	private SmithingSession session = new SmithingSession();
 	private int lastSmithingXp = -1;
@@ -77,15 +62,12 @@ public class SmithingTrackerPlugin extends Plugin
 	private final Map<Integer, Integer> barsInInventory = new HashMap<>();
 	private final Map<Integer, Integer> itemsSmithed = new LinkedHashMap<>();
 	private final Map<Integer, Integer> cachedItemTotals = new HashMap<>();
-
-	// Live wiki prices cache - refreshed every 60s from https://prices.runescape.wiki
-	private final Map<Integer, Integer> livePrices = new ConcurrentHashMap<>();
-	private volatile Instant lastPriceFetch = Instant.EPOCH;
+	private final Map<Integer, Integer> previousInvCounts = new HashMap<>();
+	private final Map<Integer, Integer> previousTradeCounts = new HashMap<>();
 
 	public static final int BRONZE_BAR = 2349, IRON_BAR = 2351, STEEL_BAR = 2353, MITHRIL_BAR = 2359, ADAMANTITE_BAR = 2361, RUNITE_BAR = 2363;
 	private static final int SMITHING_ANIMATION = 898;
 	private static final int MAX_REAL_SMITH_XP = 400;
-	private static final String WIKI_PRICE_URL = "https://prices.runescape.wiki/api/v1/osrs/latest";
 
 	@Provides SmithingTrackerConfig provideConfig(ConfigManager c) { return c.getConfig(SmithingTrackerConfig.class); }
 
@@ -98,74 +80,110 @@ public class SmithingTrackerPlugin extends Plugin
 		{
 			lastSmithingXp = client.getSkillExperience(Skill.SMITHING);
 			loginTime = Instant.now();
-			clientThread.invoke(this::scanForAllSmithableItems);
+			clientThread.invoke(() -> scanForAllSmithableItems());
 		}
-		// initial fetch + schedule every 60s
-		executor.submit(this::fetchLivePrices);
-		executor.scheduleWithFixedDelay(this::fetchLivePrices, 60, 60, TimeUnit.SECONDS);
 	}
-	@Override protected void shutDown() { overlayManager.remove(overlay); overlayManager.remove(itemBoxOverlay); resetAll(); livePrices.clear(); }
+	@Override protected void shutDown() { overlayManager.remove(overlay); overlayManager.remove(itemBoxOverlay); resetAll(); }
 
 	private void resetAll()
 	{
-		session.reset(); barsUsed.clear(); barsInBank.clear(); barsInInventory.clear(); itemsSmithed.clear(); cachedItemTotals.clear();
+		session.reset(); barsUsed.clear(); barsInBank.clear(); barsInInventory.clear(); itemsSmithed.clear(); cachedItemTotals.clear(); previousInvCounts.clear(); previousTradeCounts.clear();
 		trackedItemName = "None"; trackedItemId = -1; trackedItemPrice = 0; lastSmithingXp = -1; pendingItemName = null; lastSmithingTime = null; loginTime = null; hasStartedSmithing = false; lastLocation = null; wasMovingLastTick = false;
 	}
 
-	// Live price fetcher - uses wiki API every 60s
-	private void fetchLivePrices()
+
+	public int getRemainingBars(int barId)
+	{
+		int bank = barsInBank.getOrDefault(barId, 0);
+		int inv = barsInInventory.getOrDefault(barId, 0);
+		return Math.max(0, bank + inv);
+	}
+
+	public int getTotalBarsAvailable(int barId)
+	{
+		return barsInBank.getOrDefault(barId, 0) + barsInInventory.getOrDefault(barId, 0);
+	}
+
+	private int countWithNoted(ItemContainer container, int barId)
+	{
+		if (container == null) return 0;
+		java.util.Set<Integer> seen = new java.util.HashSet<>();
+		int total = 0;
+		try {
+			total += container.count(barId);
+			seen.add(barId);
+		} catch (Exception ignored) {}
+		try {
+			int notedId = itemManager.getItemComposition(barId).getNote();
+			if (notedId != -1 && !seen.contains(notedId)) {
+				total += container.count(notedId);
+				seen.add(notedId);
+			}
+		} catch (Exception ignored) {}
+		try {
+			int linked = itemManager.getItemComposition(barId).getLinkedNoteId();
+			if (linked != -1 && !seen.contains(linked)) {
+				total += container.count(linked);
+				seen.add(linked);
+			}
+		} catch (Exception ignored2) {}
+		try {
+			int plusOne = barId + 1;
+			if (!seen.contains(plusOne)) {
+				total += container.count(plusOne);
+			}
+		} catch (Exception ignored3) {}
+		return total;
+	}
+
+
+
+
+	public int getLivePrice(int itemId)
 	{
 		try
 		{
-			Request request = new Request.Builder().url(WIKI_PRICE_URL).header("User-Agent", "SmithingTracker - RuneLite plugin").build();
-			try (Response response = okHttpClient.newCall(request).execute())
+			try
 			{
-				if (!response.isSuccessful() || response.body() == null) return;
-				String body = response.body().string();
-				JsonObject root = new JsonParser().parse(body).getAsJsonObject();
-				JsonObject data = root.getAsJsonObject("data");
-				if (data == null) return;
-				for (Map.Entry<String, JsonElement> entry : data.entrySet())
+				Object result = itemManager.getClass().getMethod("getItemPriceWithSource", int.class, boolean.class).invoke(itemManager, itemId, false);
+				if (result instanceof Number) return ((Number) result).intValue();
+				return (int) result.getClass().getMethod("getPrice").invoke(result);
+			}
+			catch (NoSuchMethodException nsme)
+			{
+				try
 				{
-					try
-					{
-						int itemId = Integer.parseInt(entry.getKey());
-						JsonObject priceObj = entry.getValue().getAsJsonObject();
-						int high = priceObj.has("high") && !priceObj.get("high").isJsonNull() ? priceObj.get("high").getAsInt() : 0;
-						int low = priceObj.has("low") && !priceObj.get("low").isJsonNull() ? priceObj.get("low").getAsInt() : 0;
-						int price = high > 0 ? high : low;
-						if (price > 0) livePrices.put(itemId, price);
-					}
-					catch (Exception ignored) {}
+					Object result = itemManager.getClass().getMethod("getItemPriceWithSource", int.class).invoke(itemManager, itemId);
+					if (result instanceof Number) return ((Number) result).intValue();
+					return (int) result.getClass().getMethod("getPrice").invoke(result);
 				}
-				lastPriceFetch = Instant.now();
-				log.debug("Fetched {} live prices from wiki", livePrices.size());
+				catch (Exception inner)
+				{
+					return itemManager.getItemPrice(itemId);
+				}
 			}
 		}
 		catch (Exception e)
 		{
-			log.warn("Failed to fetch wiki prices", e);
+			try { return itemManager.getItemPrice(itemId); } catch (Exception e2) { return 0; }
 		}
 	}
 
-	public int getLivePrice(int itemId)
+	public long getLivePriceLong(int itemId)
 	{
-		Integer live = livePrices.get(itemId);
-		if (live != null && live > 0) return live;
-		try { return itemManager.getItemPrice(itemId); } catch (Exception e) { return 0; }
+		try { return getLivePrice(itemId); } catch (Exception e) { return 0; }
 	}
 
 	public int getEffectiveBarPrice(int barId)
 	{
-		// If user set a custom buy price for the currently selected bar type, use it for accurate profit
 		if (config.customBarCost() > 0 && barId == config.barType().getItemId()) return config.customBarCost();
-		// Otherwise use live GE price from wiki (refreshed every 60s)
 		return getLivePrice(barId);
 	}
 
+
 	@Subscribe public void onGameStateChanged(GameStateChanged e)
 	{
-		if (e.getGameState() == GameState.LOGGED_IN) { lastSmithingXp = client.getSkillExperience(Skill.SMITHING); loginTime = Instant.now(); clientThread.invoke(this::scanForAllSmithableItems); }
+		if (e.getGameState() == GameState.LOGGED_IN) { lastSmithingXp = client.getSkillExperience(Skill.SMITHING); loginTime = Instant.now(); clientThread.invoke(() -> scanForAllSmithableItems()); }
 		else if (e.getGameState() == GameState.HOPPING || e.getGameState() == GameState.LOGIN_SCREEN) resetAll();
 	}
 
@@ -191,14 +209,14 @@ public class SmithingTrackerPlugin extends Plugin
 		if (msg.contains("you hammer") || msg.contains("you make"))
 		{
 			String clean = msg.replaceAll("<[^>]*>", ""); String[] split = clean.split("make ");
-			if (split.length > 1) { String itemPart = split[1].replace("a ", "").replace("an ", "").replace("some ", "").replace(".", "").replace("!", "").trim(); pendingItemName = mapItemName(itemPart); clientThread.invoke(this::resolvePendingItem); }
+			if (split.length > 1) { String itemPart = split[1].replace("a ", "").replace("an ", "").replace("some ", "").replace(".", "").replace("!", "").trim(); pendingItemName = mapItemName(itemPart); clientThread.invoke(() -> resolvePendingItem()); }
 		}
 	}
 
 	private void resolvePendingItem()
 	{
 		if (pendingItemName == null) return; String s = pendingItemName.toLowerCase().trim();
-		for (int i = 0; i < 40000; i++) { try { String n = itemManager.getItemComposition(i).getName(); if (n!= null && n.equalsIgnoreCase(s)) { trackedItemId = i; trackedItemPrice = getLivePrice(i); trackedItemName = n; pendingItemName = null; return; } } catch (Exception ignored) {} }
+		for (int i = 0; i < 40000; i++) { try { String n = itemManager.getItemComposition(i).getName(); if (n!= null && n.equalsIgnoreCase(s)) { trackedItemId = i; trackedItemPrice = itemManager.getItemPrice(i); trackedItemName = n; pendingItemName = null; return; } } catch (Exception ignored) {} }
 		pendingItemName = null;
 	}
 
@@ -206,31 +224,32 @@ public class SmithingTrackerPlugin extends Plugin
 	{
 		if (e.getContainerId() == InventoryID.BANK.getId())
 		{
-			ItemContainer bank = e.getItemContainer(); barsInBank.clear();
-			barsInBank.put(BRONZE_BAR, bank.count(BRONZE_BAR)); barsInBank.put(IRON_BAR, bank.count(IRON_BAR)); barsInBank.put(STEEL_BAR, bank.count(STEEL_BAR)); barsInBank.put(MITHRIL_BAR, bank.count(MITHRIL_BAR)); barsInBank.put(ADAMANTITE_BAR, bank.count(ADAMANTITE_BAR)); barsInBank.put(RUNITE_BAR, bank.count(RUNITE_BAR));
+			ItemContainer bank = e.getItemContainer();
+			barsInBank.clear();
+			barsInBank.put(BRONZE_BAR, countWithNoted(bank, BRONZE_BAR));
+			barsInBank.put(IRON_BAR, countWithNoted(bank, IRON_BAR));
+			barsInBank.put(STEEL_BAR, countWithNoted(bank, STEEL_BAR));
+			barsInBank.put(MITHRIL_BAR, countWithNoted(bank, MITHRIL_BAR));
+			barsInBank.put(ADAMANTITE_BAR, countWithNoted(bank, ADAMANTITE_BAR));
+			barsInBank.put(RUNITE_BAR, countWithNoted(bank, RUNITE_BAR));
 			scanForAllSmithableItems();
 		}
 		else if (e.getContainerId() == InventoryID.INVENTORY.getId())
 		{
 			ItemContainer inv = e.getItemContainer();
 			barsInInventory.clear();
-			barsInInventory.put(BRONZE_BAR, inv.count(BRONZE_BAR)); barsInInventory.put(IRON_BAR, inv.count(IRON_BAR)); barsInInventory.put(STEEL_BAR, inv.count(STEEL_BAR)); barsInInventory.put(MITHRIL_BAR, inv.count(MITHRIL_BAR)); barsInInventory.put(ADAMANTITE_BAR, inv.count(ADAMANTITE_BAR)); barsInInventory.put(RUNITE_BAR, inv.count(RUNITE_BAR));
+			barsInInventory.put(BRONZE_BAR, countWithNoted(inv, BRONZE_BAR));
+			barsInInventory.put(IRON_BAR, countWithNoted(inv, IRON_BAR));
+			barsInInventory.put(STEEL_BAR, countWithNoted(inv, STEEL_BAR));
+			barsInInventory.put(MITHRIL_BAR, countWithNoted(inv, MITHRIL_BAR));
+			barsInInventory.put(ADAMANTITE_BAR, countWithNoted(inv, ADAMANTITE_BAR));
+			barsInInventory.put(RUNITE_BAR, countWithNoted(inv, RUNITE_BAR));
 			updateCachedTotalsFromInventory();
 		}
-	}
-
-	public int getRemainingBars(int barId)
-	{
-		// FIXED: remaining = bank + inv (current bars you own) - do NOT subtract used, because bank+inv already decreased when you smith
-		// Old logic: bank + inv - used caused total qty to drop by 1 each smith (double subtract)
-		int bank = barsInBank.getOrDefault(barId, 0);
-		int inv = barsInInventory.getOrDefault(barId, 0);
-		return Math.max(0, bank + inv);
-	}
-
-	public int getTotalBarsAvailable(int barId)
-	{
-		return barsInBank.getOrDefault(barId, 0) + barsInInventory.getOrDefault(barId, 0);
+		else
+		{
+			try { updateCachedTotalsFromInventory(); } catch (Exception ignored) {}
+		}
 	}
 
 	@Subscribe public void onGameTick(GameTick e) { if (client.getLocalPlayer() == null) { wasMovingLastTick = false; return; } WorldPoint cur = client.getLocalPlayer().getWorldLocation(); wasMovingLastTick = lastLocation!= null &&!lastLocation.equals(cur); lastLocation = cur; }
@@ -250,7 +269,10 @@ public class SmithingTrackerPlugin extends Plugin
 		itemsSmithed.clear(); for (Integer id : found) itemsSmithed.put(id, 1);
 	}
 
-	private boolean isSmithableType(String n) { return n.contains("2h sword") || n.contains("platebody") || n.contains("platelegs") || n.contains("plateskirt") || n.contains("full helm") || n.contains("med helm") || n.contains("chainbody") || n.contains("sq shield") || n.contains("kiteshield") || n.contains("scimitar") || n.contains("longsword") || n.contains("sword") || n.contains("dagger") || n.contains("axe") || n.contains("mace") || n.contains("warhammer") || n.contains("battleaxe") || n.contains("claws") || n.contains("spear") || n.contains("halberd") || n.contains("pickaxe") || n.contains("hasta") || n.contains("javelin heads") || n.contains("dart tips") || n.contains("arrowtips") || n.contains("knives") || n.contains("bolts") || n.contains("limbs") || n.contains("nails"); }
+	private boolean isSmithableType(String n) {
+		if (n.contains("pickaxe")) return false;
+		return n.contains("2h sword") || n.contains("platebody") || n.contains("platelegs") || n.contains("plateskirt") || n.contains("full helm") || n.contains("med helm") || n.contains("chainbody") || n.contains("sq shield") || n.contains("kiteshield") || n.contains("scimitar") || n.contains("longsword") || n.contains("sword") || n.contains("dagger") || n.contains("axe") || n.contains("mace") || n.contains("warhammer") || n.contains("battleaxe") || n.contains("claws") || n.contains("spear") || n.contains("halberd") || n.contains("hasta") || n.contains("javelin heads") || n.contains("dart tips") || n.contains("arrowtips") || n.contains("knives") || n.contains("bolts") || n.contains("limbs") || n.contains("nails");
+	}
 	private String mapItemName(String raw) { String l = raw.toLowerCase().trim(); String p = getBarPrefix(); if (l.equals("two-handed sword") || l.equals("2h sword")) return p + " 2h sword"; return p + " " + raw; }
 	private String getBarPrefix() { switch (config.barType()) { case BRONZE: return "bronze"; case IRON: return "iron"; case STEEL: return "steel"; case MITHRIL: return "mithril"; case ADAMANTITE: return "adamant"; case RUNITE: return "rune"; default: return "rune"; } }
 
@@ -270,8 +292,8 @@ public class SmithingTrackerPlugin extends Plugin
 
 	public int getItemsSmithed() { return hasStartedSmithing? session.getItemsSmithed() : 0; }
 	public double getItemsPerHour() { return hasStartedSmithing? session.getPerHour() : 0; }
-	public double getGpPerHour() { return!hasStartedSmithing || trackedItemId == -1? 0 : getItemsPerHour() * getLivePrice(trackedItemId); }
-	public int getBarCostPerHour() { return!hasStartedSmithing || trackedItemId == -1? 0 : (int)(getItemsPerHour() * getBarsPerItem(trackedItemName) * getEffectiveBarPrice(config.barType().getItemId())); }
+	public double getGpPerHour() { return!hasStartedSmithing || trackedItemPrice <= 0? 0 : getItemsPerHour() * trackedItemPrice; }
+	public int getBarCostPerHour() { return!hasStartedSmithing || trackedItemPrice <= 0? 0 : (int)(getItemsPerHour() * getBarsPerItem(trackedItemName) * itemManager.getItemPrice(config.barType().getItemId())); }
 	public int getProfitPerHour() { return (int)getGpPerHour() - getBarCostPerHour(); }
 	public String getTrackedItemName() { return trackedItemName; }
 	public int getTrackedItemId() { return trackedItemId; }
@@ -283,11 +305,12 @@ public class SmithingTrackerPlugin extends Plugin
 	public String getStatus()
 	{
 		if (client.getLocalPlayer() == null) return "Idle";
-		Widget bankWidget = client.getWidget(ComponentID.BANK_ITEM_CONTAINER);
+		Widget bankWidget = client.getWidget(WidgetInfo.BANK_CONTAINER);
 		if (bankWidget!= null &&!bankWidget.isHidden()) return "Banking";
-		if (client.getLocalPlayer().getAnimation() == SMITHING_ANIMATION) return "Smithing";
-		if (lastSmithingTime != null && Duration.between(lastSmithingTime, Instant.now()).toMillis() < 2500) return "Smithing";
 		if (wasMovingLastTick) return "Running";
+		if (client.getLocalPlayer() != null && client.getLocalPlayer().getAnimation() == SMITHING_ANIMATION) return "Smithing";
+		if (lastSmithingTime != null && Duration.between(lastSmithingTime, Instant.now()).getSeconds() < 4) return "Smithing";
+		if (hasStartedSmithing && lastSmithingTime != null && Duration.between(lastSmithingTime, Instant.now()).getSeconds() < 10) return "Smithing";
 		return "Idle";
 	}
 
@@ -295,7 +318,6 @@ public class SmithingTrackerPlugin extends Plugin
 	public Map<Integer, Integer> getBarsInBank() { return barsInBank; }
 	public int getCurrentBarId() { return config.barType().getItemId(); }
 	public ItemManager getItemManager() { return itemManager; }
-	public Instant getLastPriceFetch() { return lastPriceFetch; }
 	public String getItemKeyFromName(String lower)
 	{
 		String l = lower.toLowerCase();
@@ -326,20 +348,28 @@ public class SmithingTrackerPlugin extends Plugin
 		if (l.contains("axe") && !l.contains("battleaxe") && !l.contains("pickaxe")) return "Axe";
 		if (l.contains("mace")) return "Mace";
 		if (l.contains("sword") && !l.contains("longsword") && !l.contains("2h") && !l.contains("two-handed")) return "Sword";
-		if (l.contains("bolts")) return "Bolts";
-		return "Dagger";
+		return null;
 	}
-	public boolean shouldShowItem(int itemId)
-	{
+
+	public boolean shouldShowItem(int id) {
 		try {
-			String name = itemManager.getItemComposition(itemId).getName();
+			String name = itemManager.getItemComposition(id).getName();
 			if (name == null) return true;
+			if (name.toLowerCase().contains("pickaxe")) return false;
 			String lower = name.toLowerCase();
-			String[] parts = lower.split(" ", 2);
-			if (parts.length < 2) return true;
-			String prefix = parts[0];
+			String metal;
+			if (lower.startsWith("bronze ")) metal = "bronze";
+			else if (lower.startsWith("iron ")) metal = "iron";
+			else if (lower.startsWith("steel ")) metal = "steel";
+			else if (lower.startsWith("mithril ")) metal = "mithril";
+			else if (lower.startsWith("adamant ")) metal = "adamant";
+			else if (lower.startsWith("rune ")) metal = "rune";
+			else return true;
+
 			String key = getItemKeyFromName(lower);
-			switch (prefix) {
+			if (key == null) return true;
+
+			switch (metal) {
 				case "bronze":
 					switch (key) {
 						case "Dagger": return config.showBronzeDagger();

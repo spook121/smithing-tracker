@@ -116,8 +116,9 @@ public class ItemBoxOverlay extends OverlayPanel
                 NumberFormat nf = NumberFormat.getInstance();
                 int barId = plugin.getBarIdForItem(data.name);
                 int barsPerItem = plugin.getBarsPerItem(data.name);
-                int barPrice = plugin.getEffectiveBarPrice(barId);
-                int remainingBars = plugin.getRemainingBars(barId);
+                int barPrice = plugin.getItemManager().getItemPrice(barId);
+                int remainingBars = plugin.getTotalBarsAvailable(barId) - plugin.getBarsUsed().getOrDefault(barId, 0);
+                if (remainingBars < 0) remainingBars = 0;
                 int canMake = barsPerItem == 0? 0 : remainingBars / barsPerItem;
                 int profitEach = data.price - (barsPerItem * barPrice);
                 long totalProfit = (long) canMake * profitEach;
