@@ -108,14 +108,33 @@ public class SmithingTrackerPlugin extends Plugin
 	private int countWithNoted(ItemContainer container, int barId)
 	{
 		if (container == null) return 0;
-		int count = container.count(barId);
+		java.util.Set<Integer> seen = new java.util.HashSet<>();
+		int total = 0;
+		try {
+			total += container.count(barId);
+			seen.add(barId);
+		} catch (Exception ignored) {}
 		try {
 			int notedId = itemManager.getItemComposition(barId).getNote();
-			if (notedId != -1 && notedId != barId) {
-				count += container.count(notedId);
+			if (notedId != -1 && !seen.contains(notedId)) {
+				total += container.count(notedId);
+				seen.add(notedId);
 			}
 		} catch (Exception ignored) {}
-		return count;
+		try {
+			int linked = itemManager.getItemComposition(barId).getLinkedNoteId();
+			if (linked != -1 && !seen.contains(linked)) {
+				total += container.count(linked);
+				seen.add(linked);
+			}
+		} catch (Exception ignored2) {}
+		try {
+			int plusOne = barId + 1;
+			if (!seen.contains(plusOne)) {
+				total += container.count(plusOne);
+			}
+		} catch (Exception ignored3) {}
+		return total;
 	}
 
 
