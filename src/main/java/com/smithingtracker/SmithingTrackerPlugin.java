@@ -23,7 +23,8 @@ import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.StatChanged;
 import net.runelite.api.widgets.Widget;
-import net.runelite.api.widgets.WidgetInfo;
+import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.widgets.ComponentID;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
@@ -107,33 +108,14 @@ public class SmithingTrackerPlugin extends Plugin
 	private int countWithNoted(ItemContainer container, int barId)
 	{
 		if (container == null) return 0;
-		java.util.Set<Integer> seen = new java.util.HashSet<>();
-		int total = 0;
-		try {
-			total += container.count(barId);
-			seen.add(barId);
-		} catch (Exception ignored) {}
+		int count = container.count(barId);
 		try {
 			int notedId = itemManager.getItemComposition(barId).getNote();
-			if (notedId != -1 && !seen.contains(notedId)) {
-				total += container.count(notedId);
-				seen.add(notedId);
+			if (notedId != -1 && notedId != barId) {
+				count += container.count(notedId);
 			}
 		} catch (Exception ignored) {}
-		try {
-			int linked = itemManager.getItemComposition(barId).getLinkedNoteId();
-			if (linked != -1 && !seen.contains(linked)) {
-				total += container.count(linked);
-				seen.add(linked);
-			}
-		} catch (Exception ignored2) {}
-		try {
-			int plusOne = barId + 1;
-			if (!seen.contains(plusOne)) {
-				total += container.count(plusOne);
-			}
-		} catch (Exception ignored3) {}
-		return total;
+		return count;
 	}
 
 
@@ -305,7 +287,7 @@ public class SmithingTrackerPlugin extends Plugin
 	public String getStatus()
 	{
 		if (client.getLocalPlayer() == null) return "Idle";
-		Widget bankWidget = client.getWidget(WidgetInfo.BANK_CONTAINER);
+		Widget bankWidget = client.getWidget(ComponentID.BANK_ITEM_CONTAINER);
 		if (bankWidget!= null &&!bankWidget.isHidden()) return "Banking";
 		if (wasMovingLastTick) return "Running";
 		if (client.getLocalPlayer() != null && client.getLocalPlayer().getAnimation() == SMITHING_ANIMATION) return "Smithing";

@@ -70,7 +70,7 @@ public class ItemBoxOverlay extends OverlayPanel
         graphics.setColor(ACCENT);
         graphics.drawRect(0, 0, boxWidth - 1, boxHeight - 1);
         graphics.setColor(ACCENT);
-        graphics.setFont(new Font("RuneScape Small", Font.BOLD, 15));
+        graphics.setFont(new Font("RuneScape Small", Font.BOLD, 12));
         graphics.drawString("ITEMS", ICON_PADDING, 14);
         tooltipMap.clear();
         Point mousePos = null;
@@ -94,7 +94,7 @@ public class ItemBoxOverlay extends OverlayPanel
                 long totalValue = (long) totalCount * gePrice;
                 tooltipMap.put(iconBounds, new ItemTooltipData(plugin.getItemManager().getItemComposition(itemId).getName(), totalCount, gePrice, totalValue, itemId));
                 graphics.setColor(GOLD);
-                graphics.setFont(new Font("RuneScape Small", Font.PLAIN, 15));
+                graphics.setFont(new Font("RuneScape Small", Font.PLAIN, 11));
                 String countStr = String.valueOf(totalCount);
                 int strWidth = graphics.getFontMetrics().stringWidth(countStr);
                 graphics.drawString(countStr, xPos + (ICON_SIZE - strWidth) / 2, yPos + ICON_SIZE - 2);
@@ -134,7 +134,7 @@ public class ItemBoxOverlay extends OverlayPanel
                         "Total profit: " + nf.format(totalProfit) + " gp"
                 };
 
-                graphics.setFont(new Font("RuneScape Small", Font.PLAIN, 15));
+                graphics.setFont(new Font("RuneScape Small", Font.PLAIN, 12));
                 int maxWidth = 0;
                 for (String line : lines) maxWidth = Math.max(maxWidth, graphics.getFontMetrics().stringWidth(line));
                 int tooltipWidth = maxWidth + 12;
